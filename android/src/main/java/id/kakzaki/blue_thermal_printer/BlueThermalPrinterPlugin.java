@@ -19,6 +19,8 @@ import androidx.core.content.ContextCompat;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Build;
+import android.text.TextUtils;
 import android.util.Log;
 import android.os.AsyncTask;
 import android.os.Handler;
@@ -60,11 +62,14 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
   private static final String TAG = "BThermalPrinterPlugin";
   private static final String NAMESPACE = "blue_thermal_printer";
   private static final int REQUEST_COARSE_LOCATION_PERMISSIONS = 1451;
+  private static final int REQUEST_COARSE_LOCATION_PERMISSIONS2 = 14512;
+  private static final int REQUEST_COARSE_LOCATION_PERMISSIONS3 = 14513;
   private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
   private static ConnectedThread THREAD = null;
   private BluetoothAdapter mBluetoothAdapter;
 
   private Result pendingResult;
+  private Result connectResult;
 
   private EventSink readSink;
   private EventSink statusSink;
@@ -81,6 +86,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
   private Application application;
   private Activity activity;
+  private String address;
 
   public static void registerWith(Registrar registrar) {
     final BlueThermalPrinterPlugin instance = new BlueThermalPrinterPlugin();
@@ -265,20 +271,26 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         break;
 
       case "getBondedDevices":
+        pendingResult =result;
         try {
-
-          if (ContextCompat.checkSelfPermission(activity,
-                  Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-
-            ActivityCompat.requestPermissions(activity,
-                    new String[] { Manifest.permission.ACCESS_COARSE_LOCATION }, REQUEST_COARSE_LOCATION_PERMISSIONS);
-
-            pendingResult = result;
-            break;
+          List<String> requestList = new ArrayList<>();
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            requestList.add(Manifest.permission.BLUETOOTH_SCAN);
+            requestList.add(Manifest.permission.BLUETOOTH_ADVERTISE);
+            requestList.add(Manifest.permission.BLUETOOTH_CONNECT);
+          } else {
+            if (ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_COARSE_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+              requestList.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+            }
           }
 
-          getBondedDevices(result);
-
+          if (requestList.size() > 0) {
+            ActivityCompat.requestPermissions(
+                    activity,requestList.toArray(new String[requestList.size()]),
+                    REQUEST_COARSE_LOCATION_PERMISSIONS);
+            break;
+          }
         } catch (Exception ex) {
           result.error("Error", ex.getMessage(), exceptionToString(ex));
         }
@@ -286,12 +298,33 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         break;
 
       case "connect":
+        connectResult =result;
         if (arguments.containsKey("address")) {
-          String address = (String) arguments.get("address");
+          address = (String) arguments.get("address");
           connect(result, address);
         } else {
           result.error("invalid_argument", "argument 'address' not found", null);
         }
+
+        List<String> requestList = new ArrayList<>();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+          requestList.add(Manifest.permission.BLUETOOTH_SCAN);
+          requestList.add(Manifest.permission.BLUETOOTH_ADVERTISE);
+          requestList.add(Manifest.permission.BLUETOOTH_CONNECT);
+        } else {
+          if (ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_COARSE_LOCATION)
+                  != PackageManager.PERMISSION_GRANTED) {
+            requestList.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+          }
+        }
+
+        if (requestList.size() > 0) {
+          ActivityCompat.requestPermissions(
+                  activity,requestList.toArray(new String[requestList.size()]),
+                  REQUEST_COARSE_LOCATION_PERMISSIONS2);
+          break;
+        }
+
         break;
 
       case "disconnect":
@@ -428,7 +461,27 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       }
       return true;
     }
+
+    if (requestCode == REQUEST_COARSE_LOCATION_PERMISSIONS2) {
+      if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (!TextUtils.isEmpty(address)&&connectResult!=null) {
+          connect(connectResult, address);
+        } else {
+          connectResult.error("invalid_argument", "argument 'address' not found", null);
+        }
+      }
+      return true;
+    }
+
+
+
     return false;
+
+
+
+
+
+
   }
 
   private void state(Result result) {
